@@ -227,6 +227,15 @@ def main():
         first_name = row.get('First Name', '').strip()
         last_name = row.get('Last Name', '').strip()
 
+        # If First Name is empty, try to parse from Full Name
+        if not first_name:
+            full_name = row.get('Full Name', '').strip()
+            if full_name:
+                parts = full_name.split(None, 1)  # Split on first whitespace
+                first_name = parts[0] if parts else ''
+                if len(parts) > 1 and not last_name:
+                    last_name = parts[1]
+
         if not company_name or not first_name:
             continue
 
