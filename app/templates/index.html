@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <title>Tech Meets Terrain: RILA Edition</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css">
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+</head>
+<body x-data="app()" x-init="fetchProspects()">
+
+    <!-- Header -->
+    <header class="header">
+        <h1 class="header-title">Tech Meets Terrain: RILA Edition</h1>
+        <div class="search-wrapper">
+            <input
+                type="search"
+                class="search-input"
+                placeholder="Search name or company (2+ chars)..."
+                x-model="searchQuery"
+                @input.debounce.300ms="resetAndFetch()"
+            >
+            <button
+                class="search-clear"
+                x-show="searchQuery"
+                @click="searchQuery = ''; resetAndFetch()"
+                type="button"
+            >&times;</button>
+        </div>
+    </header>
+
+    <!-- Filter Bar -->
+    <div class="filter-bar">
+        <button
+            class="filter-btn"
+            :class="{ active: currentFilter === 'all' }"
+            data-filter="all"
+            @click="setFilter('all')"
+        >All</button>
+        <button
+            class="filter-btn"
+            :class="{ active: currentFilter === 'gate' }"
+            data-filter="gate"
+            @click="setFilter('gate')"
+        >Gate Tech</button>
+        <button
+            class="filter-btn"
+            :class="{ active: currentFilter === 'truck' }"
+            data-filter="truck"
+            @click="setFilter('truck')"
+        >Truck Parking</button>
+        <button
+            class="filter-btn"
+            :class="{ active: currentFilter === 'other' }"
+            data-filter="other"
+            @click="setFilter('other')"
+        >Other</button>
+    </div>
+
+    <!-- Loading State -->
+    <div class="loading" x-show="loading && prospects.length === 0">
+        <div class="loading-spinner"></div>
+    </div>
+
+    <!-- Empty State -->
+    <div class="empty-state" x-show="!loading && prospects.length === 0">
+        <div class="empty-state-icon">🔍</div>
+        <p class="empty-state-text" x-text="searchQuery && searchQuery.length < 2 ? 'Type 2+ characters to search' : 'No prospects found'"></p>
+    </div>
+
+    <!-- Prospect List -->
+    <div class="prospect-list" x-show="prospects.length > 0" @scroll.window="handleScroll()">
+        <template x-for="prospect in prospects" :key="prospect.id">
+            <div class="prospect-card" @click="openDetail(prospect)">
+                <div class="card-header">
+                    <div class="card-info">
+                        <h3 class="card-name" x-text="prospect.name"></h3>
+                        <p class="card-company" x-text="prospect.company_name"></p>
+                        <p class="card-title" x-text="prospect.job_title" x-show="prospect.job_title"></p>
+                    </div>
+                    <div class="score-badges-col">
+                        <div class="score-badges">
+                            <span
+                                class="score-badge gate"
+                                :class="{ high: prospect.gate_fit_score >= 70, low: prospect.gate_fit_score < 30 }"
+                            >G: <span x-text="prospect.gate_fit_score"></span></span>
+                            <span
+                                class="score-badge truck"
+                                :class="{ high: prospect.truck_fit_score >= 70, low: prospect.truck_fit_score < 30 }"
+                            >T: <span x-text="prospect.truck_fit_score"></span></span>
+                        </div>
+                        <span class="ticket-badge" :class="{ retailer: prospect.ticket_type?.includes('Retailer') }" x-text="prospect.ticket_type" x-show="prospect.ticket_type"></span>
+                    </div>
+                </div>
+                <div class="card-stats">
+                    <span class="stat" x-show="prospect.dc_count > 0">
+                        <span class="stat-value" x-text="prospect.dc_count"></span> DCs
+                    </span>
+                    <span class="stat" x-show="prospect.truck_count > 0">
+                        <span class="stat-value" x-text="prospect.truck_count"></span> Trucks
+                    </span>
+                </div>
+                <div class="card-hook" x-show="prospect.hook">
+                    <p x-text="prospect.hook"></p>
+                </div>
+            </div>
+        </template>
+
+        <!-- Loading more indicator -->
+        <div class="loading-more" x-show="loadingMore">
+            <div class="loading-spinner small"></div>
+        </div>
+
+        <!-- End of results -->
+        <div class="end-results" x-show="!hasMore && prospects.length > 0 && !loadingMore">
+            <p>End of results</p>
+        </div>
+    </div>
+
+    <!-- Detail Modal -->
+    <div class="detail-overlay" x-show="selectedProspect" @click.self="closeDetail()" x-cloak>
+        <div class="detail-sheet" x-show="selectedProspect" x-transition:enter="slide-up">
+            <div class="detail-header-row">
+                <div class="detail-handle"></div>
+                <button class="detail-close" @click="closeDetail()">&times;</button>
+            </div>
+
+            <template x-if="selectedProspect">
+                <div>
+                    <div class="card-header" style="margin-bottom: 1rem;">
+                        <div>
+                            <h2 class="card-name" x-text="selectedProspect.name"></h2>
+                            <p class="card-company" x-text="selectedProspect.company_name"></p>
+                            <p class="card-title" x-text="selectedProspect.job_title" x-show="selectedProspect.job_title"></p>
+                        </div>
+                        <div class="score-badges-col">
+                            <div class="score-badges">
+                                <span class="score-badge gate" :class="{ high: selectedProspect.gate_fit_score >= 70 }">
+                                    Gate: <span x-text="selectedProspect.gate_fit_score"></span>
+                                </span>
+                                <span class="score-badge truck" :class="{ high: selectedProspect.truck_fit_score >= 70 }">
+                                    Truck: <span x-text="selectedProspect.truck_fit_score"></span>
+                                </span>
+                            </div>
+                            <span class="ticket-badge" :class="{ retailer: selectedProspect.ticket_type?.includes('Retailer') }" x-text="selectedProspect.ticket_type" x-show="selectedProspect.ticket_type"></span>
+                        </div>
+                    </div>
+
+                    <!-- Key Stats -->
+                    <div class="detail-stats" x-show="selectedProspect.dc_count > 0 || selectedProspect.truck_count > 0">
+                        <div class="stat-box" x-show="selectedProspect.dc_count > 0">
+                            <span class="stat-number" x-text="selectedProspect.dc_count"></span>
+                            <span class="stat-label">DCs</span>
+                        </div>
+                        <div class="stat-box" x-show="selectedProspect.truck_count > 0">
+                            <span class="stat-number" x-text="selectedProspect.truck_count"></span>
+                            <span class="stat-label">Trucks</span>
+                        </div>
+                    </div>
+
+                    <!-- Hook -->
+                    <div class="detail-section hook-section" x-show="selectedProspect.hook">
+                        <h3>Conversation Starter</h3>
+                        <p x-text="selectedProspect.hook"></p>
+                    </div>
+
+                    <!-- Company Bullets -->
+                    <div class="detail-section" x-show="selectedProspect.company_bullets && selectedProspect.company_bullets.length > 0">
+                        <h3>Company Research</h3>
+                        <ul class="bullet-list">
+                            <template x-for="bullet in selectedProspect.company_bullets" :key="bullet">
+                                <li x-text="bullet"></li>
+                            </template>
+                        </ul>
+                    </div>
+
+                    <!-- Company Overview -->
+                    <div class="detail-section" x-show="selectedProspect.company_overview">
+                        <h3>Company Overview</h3>
+                        <p x-text="selectedProspect.company_overview"></p>
+                    </div>
+
+                    <!-- Contact Info -->
+                    <div class="detail-section">
+                        <h3>Contact Info</h3>
+                        <div class="contact-grid">
+                            <template x-if="selectedProspect.email">
+                                <a :href="'mailto:' + selectedProspect.email" class="contact-link">
+                                    <span class="contact-label">Email</span>
+                                    <span class="contact-value" x-text="selectedProspect.email"></span>
+                                </a>
+                            </template>
+                            <template x-if="selectedProspect.linkedin_url">
+                                <a :href="selectedProspect.linkedin_url" target="_blank" class="contact-link">
+                                    <span class="contact-label">LinkedIn</span>
+                                    <span class="contact-value">View Profile</span>
+                                </a>
+                            </template>
+                        </div>
+                    </div>
+
+                    <!-- Metadata -->
+                    <div class="detail-section metadata-section">
+                        <h3>Details</h3>
+                        <div class="metadata-grid">
+                            <div class="metadata-item" x-show="selectedProspect.job_function">
+                                <span class="metadata-label">Function</span>
+                                <span class="metadata-value" x-text="selectedProspect.job_function"></span>
+                            </div>
+                            <div class="metadata-item" x-show="selectedProspect.management_level">
+                                <span class="metadata-label">Level</span>
+                                <span class="metadata-value" x-text="selectedProspect.management_level"></span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </template>
+        </div>
+    </div>
+
+    <script>
+        function app() {
+            return {
+                prospects: [],
+                loading: true,
+                loadingMore: false,
+                currentFilter: 'all',
+                searchQuery: '',
+                selectedProspect: null,
+                offset: 0,
+                limit: 20,
+                total: 0,
+                hasMore: true,
+
+                async fetchProspects(append = false) {
+                    if (!append) {
+                        this.loading = true;
+                    } else {
+                        this.loadingMore = true;
+                    }
+
+                    try {
+                        const params = new URLSearchParams();
+                        params.set('filter', this.currentFilter);
+                        params.set('limit', this.limit);
+                        params.set('offset', this.offset);
+                        if (this.searchQuery) {
+                            params.set('search', this.searchQuery);
+                        }
+
+                        const response = await fetch(`/api/prospects?${params}`);
+                        const data = await response.json();
+
+                        if (data.prospects) {
+                            if (append) {
+                                this.prospects = [...this.prospects, ...data.prospects];
+                            } else {
+                                this.prospects = data.prospects;
+                            }
+                            this.total = data.total;
+                            this.hasMore = this.offset + data.prospects.length < data.total;
+                        } else {
+                            // Empty result (search too short)
+                            this.prospects = [];
+                            this.total = 0;
+                            this.hasMore = false;
+                        }
+                    } catch (error) {
+                        console.error('Failed to fetch prospects:', error);
+                        if (!append) {
+                            this.prospects = [];
+                        }
+                    }
+                    this.loading = false;
+                    this.loadingMore = false;
+                },
+
+                resetAndFetch() {
+                    this.offset = 0;
+                    this.hasMore = true;
+                    this.fetchProspects(false);
+                },
+
+                setFilter(filter) {
+                    this.currentFilter = filter;
+                    this.resetAndFetch();
+                },
+
+                handleScroll() {
+                    if (this.loadingMore || !this.hasMore) return;
+
+                    const scrollTop = window.scrollY || document.documentElement.scrollTop;
+                    const scrollHeight = document.documentElement.scrollHeight;
+                    const clientHeight = document.documentElement.clientHeight;
+
+                    // Trigger load more when within 200px of bottom
+                    if (scrollTop + clientHeight >= scrollHeight - 200) {
+                        this.loadMore();
+                    }
+                },
+
+                loadMore() {
+                    if (this.loadingMore || !this.hasMore) return;
+                    this.offset += this.limit;
+                    this.fetchProspects(true);
+                },
+
+                async openDetail(prospect) {
+                    // Fetch full details
+                    try {
+                        const response = await fetch(`/api/prospects/${prospect.id}`);
+                        const data = await response.json();
+                        this.selectedProspect = data;
+                        document.body.style.overflow = 'hidden';
+                    } catch (error) {
+                        console.error('Failed to fetch prospect details:', error);
+                    }
+                },
+
+                closeDetail() {
+                    this.selectedProspect = null;
+                    document.body.style.overflow = '';
+                }
+            }
+        }
+    </script>
+</body>
+</html>
